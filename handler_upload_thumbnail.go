@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -70,18 +71,31 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
+	// Parse the media type to get the core type (e.g., "image/jpeg" from "image/jpeg; charset=utf-8")
+	parsedMediaType, _, err := mime.ParseMediaType(mediaType)
+	if err != nil {
+		respondWithError(w, http.StatusBadRequest, "Failed to parse media type", err)
+		return
+	}
+
+	// 4. Validate that the media type is either a JPEG or PNG image
+	if parsedMediaType != "image/jpeg" && parsedMediaType != "image/png" {
+		respondWithError(w, http.StatusBadRequest, fmt.Sprintf("Unsupported file type: %s. Only JPEG and PNG are allowed.", parsedMediaType), nil)
+		return
+	}
+
 	// Determine the file extension from the Content-Type
-	fileExt, err := getFileExtension(mediaType)
+	fileExt, err := getFileExtension(parsedMediaType)
 	if err != nil {
 		respondWithError(w, http.StatusBadRequest, err.Error(), nil)
 		return
 	}
 
-	// 4. Create a unique file path on disk
+	// 5. Create a unique file path on disk
 	filename := fmt.Sprintf("%s%s", videoID.String(), fileExt)
 	filePath := filepath.Join(cfg.assetsRoot, filename)
 
-	// 5. Create the new file on the filesystem
+	// 6. Create the new file on the filesystem
 	dst, err := os.Create(filePath)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't create file on disk", err)
@@ -89,14 +103,14 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	}
 	defer dst.Close()
 
-	// 6. Copy the contents from the form file to the new file on disk
+	// 7. Copy the contents from the form file to the new file on disk
 	_, err = io.Copy(dst, file)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't save file to disk", err)
 		return
 	}
 
-	// 7. Get the video's metadata from the database
+	// 8. Get the video's metadata from the database
 	video, err := cfg.db.GetVideo(videoID)
 	if err != nil {
 		respondWithError(w, http.StatusNotFound, "Video not found", err)
@@ -109,17 +123,17 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// 8. Update the video metadata with the new thumbnail URL
+	// 9. Update the video metadata with the new thumbnail URL
 	thumbnailURL := fmt.Sprintf("http://localhost:%s/assets/%s", cfg.port, filename)
 	video.ThumbnailURL = &thumbnailURL // Pass a pointer to the string
 
-	// 9. Update the record in the database
+	// 10. Update the record in the database
 	err = cfg.db.UpdateVideo(video)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't update video metadata", err)
 		return
 	}
 
-	// 10. Respond with the updated JSON
+	// 11. Respond with the updated JSON
 	respondWithJSON(w, http.StatusOK, video)
 }
