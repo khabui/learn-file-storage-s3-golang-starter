@@ -1,6 +1,8 @@
 package main
 
 import (
+	"crypto/rand"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"mime"
@@ -91,11 +93,18 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// 5. Create a unique file path on disk
-	filename := fmt.Sprintf("%s%s", videoID.String(), fileExt)
+	// 5. Use crypto/rand.Read to generate a unique base64 filename
+	randBytes := make([]byte, 32)
+	if _, err := rand.Read(randBytes); err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Could not generate random filename", err)
+		return
+	}
+	filename := base64.RawURLEncoding.EncodeToString(randBytes) + fileExt
+
+	// 6. Create a unique file path on disk
 	filePath := filepath.Join(cfg.assetsRoot, filename)
 
-	// 6. Create the new file on the filesystem
+	// 7. Create the new file on the filesystem
 	dst, err := os.Create(filePath)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't create file on disk", err)
@@ -103,14 +112,14 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	}
 	defer dst.Close()
 
-	// 7. Copy the contents from the form file to the new file on disk
+	// 8. Copy the contents from the form file to the new file on disk
 	_, err = io.Copy(dst, file)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't save file to disk", err)
 		return
 	}
 
-	// 8. Get the video's metadata from the database
+	// 9. Get the video's metadata from the database
 	video, err := cfg.db.GetVideo(videoID)
 	if err != nil {
 		respondWithError(w, http.StatusNotFound, "Video not found", err)
@@ -123,17 +132,17 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	// 9. Update the video metadata with the new thumbnail URL
+	// 10. Update the video metadata with the new thumbnail URL
 	thumbnailURL := fmt.Sprintf("http://localhost:%s/assets/%s", cfg.port, filename)
 	video.ThumbnailURL = &thumbnailURL // Pass a pointer to the string
 
-	// 10. Update the record in the database
+	// 11. Update the record in the database
 	err = cfg.db.UpdateVideo(video)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't update video metadata", err)
 		return
 	}
 
-	// 11. Respond with the updated JSON
+	// 12. Respond with the updated JSON
 	respondWithJSON(w, http.StatusOK, video)
 }
