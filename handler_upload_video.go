@@ -139,6 +139,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		Key:         &s3Key,
 		Body:        processedFile,
 		ContentType: &contentType,
+		// The ACL field has been removed to align with buckets that have ACLs disabled
 	}
 
 	if _, err := cfg.s3Client.PutObject(r.Context(), putObjectInput); err != nil {
@@ -146,15 +147,15 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// 13. Update the video record in the database with the S3 URL
-	videoURL := fmt.Sprintf("https://%s.s3.%s.amazonaws.com/%s", cfg.s3Bucket, cfg.s3Region, s3Key)
+	// 13. Update the video record in the database with the cloudfront URL
+	videoURL := fmt.Sprintf("https://%s/%s", cfg.s3CfDistribution, s3Key)
 	video.VideoURL = &videoURL
 	if err := cfg.db.UpdateVideo(video); err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't update video record", err)
 		return
 	}
 
-	// 14. Respond with the updated JSON
+	// 14. Respond with the updated video
 	respondWithJSON(w, http.StatusOK, video)
 }
 
